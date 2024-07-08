@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Cierre de Caja</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.2.20"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuex@4.0.2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.13/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+    <div id="app" class="container mt-5">
+        <h1 class="text-center mb-4">Sistema de Cierre de Caja</h1>
+        <form @submit.prevent="addTransaction" class="mb-4">
+            <div class="form-row">
+                <div class="form-group col-md-4">
+                    <label for="date">Fecha:</label>
+                    <input type="text" class="form-control" v-model="newTransaction.date" readonly>
+                </div>
+                <div class="form-group col-md-4">
+                    <label for="manager">Encargado de Cierre:</label>
+                    <input type="text" class="form-control" v-model="newTransaction.manager" required>
+                </div>
+                <div class="form-group col-md-4">
+                    <label for="initialCash">Inicio Efectivo:</label>
+                    <input type="number" class="form-control" v-model="newTransaction.initialCash" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group col-md-3">
+                    <label for="totalSalesCash">Total Ventas en Efectivo:</label>
+                    <input type="number" class="form-control" v-model="newTransaction.totalSalesCash" min="0" required>
+                </div>
+                <div class="form-group col-md-3">
+                    <label for="totalDebit">Total Débito:</label>
+                    <input type="number" class="form-control" v-model="newTransaction.totalDebit" required>
+                </div>
+                <div class="form-group col-md-3">
+                    <label for="totalCredit">Total Crédito:</label>
+                    <input type="number" class="form-control" v-model="newTransaction.totalCredit" required>
+                </div>
+                <div class="form-group col-md-3">
+                    <label for="totalTransfers">Total Transferencias:</label>
+                    <input type="number" class="form-control" v-model="newTransaction.totalTransfers">
+                </div>
+            </div>
+            <h2>Gastos:</h2>
+            <div v-for="(expense, index) in newTransaction.expenses" :key="index" class="form-row">
+                <div class="form-group col-md-2">
+                    <label :for="'expenseTicketNumber' + index" v-text="'N° de Boleta ' + (index + 1)"></label>
+                    <input type="text" class="form-control" :id="'expenseTicketNumber' + index" v-model="expense.ticketNumber">
+                </div>
+                <div class="form-group col-md2">
+                    <label :for="'expenseAmount' + index" v-text="'Monto ' + (index + 1)"></label>
+                    <input type="number" class="form-control" :id="'expenseAmount' + index" v-model="expense.amount">
+                </div>
+                <div class="form-group col-md-2">
+                    <label :for="'paymentMethod' + index" v-text="'Método de Pago ' + (index + 1)"></label>
+                    <select class="form-control" :id="'paymentMethod' + index" v-model="expense.paymentMethod">
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Débito">Débito</option>
+                    </select>
+                </div>
+                <div v-if="expense.paymentMethod === 'Efectivo'" class="form-group col-md-2">
+                    <label :for="'cashPaid' + index" v-text="'Efectivo Pagado ' + (index + 1)"></label>
+                    <input type="number" class="form-control" :id="'cashPaid' + index" v-model="expense.cashPaid" @input="updateCashReturned(expense)">
+                </div>
+                <div v-if="expense.paymentMethod === 'Efectivo'" class="form-group col-md-2">
+                    <label :for="'cashReturned' + index" v-text="'Efectivo Devuelto ' + (index + 1)"></label>
+                    <input type="number" class="form-control" :id="'cashReturned' + index" v-model="expense.cashReturned" readonly>
+                </div>
+                <div class="form-group col-md-4">
+                    <label :for="'expenseDetails' + index" v-text="'Detalle del Gasto ' + (index + 1)"></label>
+                    <input type="text" class="form-control" :id="'expenseDetails' + index" v-model="expense.details">
+                </div>
+            </div>
+            <div class="form-row justify-content-end">
+                <button type="button" class="btn btn-secondary mr-2" @click="addExpense">Agregar Gasto</button>
+                <button type="submit" class="btn btn-primary" :disabled="!isFormComplete" title="Este botón se oprime una sola vez en el cierre, tienes que tener todos los campos completados">Registrar Datos</button>
+            </div>
+        </form>
+
+        <div class="mb-4">
+            <h2>Transacciones</h2>
+            <ul class="list-group">
+                <li v-for="transaction in transactions" :key="transaction.id" class="list-group-item">
+                    <div><strong>Fecha:</strong> {{ transaction.date }} - <strong>Encargado:</strong> {{ transaction.manager }}</div>
+                    <div><strong>Inicio Efectivo:</strong> {{ formatCurrency(transaction.initialCash) }} - <strong>Total Ventas en Efectivo:</strong> {{ formatCurrency(transaction.totalSalesCash) }}</div>
+                    <div><strong>Total Débito:</strong> {{ formatCurrency(transaction.totalDebit) }} - <strong>Total Crédito:</strong> {{ formatCurrency(transaction.totalCredit) }} - <strong>Total Transferencias:</strong> {{ formatCurrency(transaction.totalTransfers) }}</div>
+                    <div><strong>Total Gastos:</strong> {{ formatCurrency(totalExpenses(transaction.expenses)) }}</div>
+                    <div><strong>Detalle de Gastos:</strong>
+                        <ul>
+                            <li v-for="(expense, index) in transaction.expenses" :key="index">
+                                N° Boleta: {{ expense.ticketNumber }} - Monto: {{ formatCurrency(expense.amount) }} - Método de Pago: {{ expense.paymentMethod }} - 
+                                <span v-if="expense.paymentMethod === 'Efectivo'">
+                                    Efectivo Pagado: {{ formatCurrency(expense.cashPaid) }} - Efectivo Devuelto: {{ formatCurrency(expense.cashReturned) }}
+                                </span>
+                                - Detalle: {{ expense.details }}
+                            </li>
+                        </ul>
+                    </div>
+                    <div><strong>Total Ventas en Efectivo - los Gastos:</strong> {{ formatCurrency(totalSalesCashMinusExpenses(transaction)) }}</div>
+                    <div><strong>Total Ventas:</strong> {{ formatCurrency(totalSalesTransaction(transaction)) }}</div>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="card-title">Resumen de Caja</h2>
+                <p class="card-text"><strong>Total Efectivo en Caja:</strong> {{ formatCurrency(totalCashInBox) }}</p>
+                <p v-if="totalCashInBox > 30000" class="card-text text-danger">Sugerencia: Realizar un retiro de caja.</p>
+                <p v-else-if="totalCashInBox > 0 && totalCashInBox <= 30000" class="card-text text-success">El efectivo está perfecto para el inicio.</p>
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label for="cashWithdrawal">Retiro de Efectivo:</label>
+                        <input type="number" class="form-control" v-model="cashWithdrawal" required>
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="withdrawalReason">Motivo del Retiro:</label>
+                        <input type="text" class="form-control" v-model="withdrawalReason" required>
+                    </div>
+                </div>
+                <button v-if="totalCashInBox > 30000" @click="makeCashWithdrawal" :disabled="!cashWithdrawal || !withdrawalReason" class="btn btn-warning">Realizar Retiro</button>
+                <button v-else-if="totalCashInBox > 0 && totalCashInBox <= 30000" @click="finalizeClosure" class="btn btn-success">Finalizar Cierre</button>
+                <p v-if="totalCashInBox > 0" class="card-text mt-3"><strong>Total Dinero en Caja después del Retiro:</strong> {{ formatCurrency(totalCashAfterWithdrawal) }}</p>
+            </div>
+        </div>
+        
+        <button @click="downloadAndClearPDF" class="btn btn-success">Descargar PDF</button>
+    </div>
+
+    <script src="js/main.js"></script>
+</body>
+</html>
